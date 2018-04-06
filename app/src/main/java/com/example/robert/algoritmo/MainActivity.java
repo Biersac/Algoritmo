@@ -13,8 +13,12 @@ import java.io.InputStream;
 
 import android.view.View;
 import android.util.Log;
+import android.widget.ImageView;
 
+import java.util.ArrayList;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 
 public class MainActivity extends AppCompatActivity {
@@ -27,17 +31,16 @@ public class MainActivity extends AppCompatActivity {
 
     private ThreadConnect threadConnect;
     private BluetoothAdapter bluetoothAdapter;
+
     private EditText editTextBluetoothAddress;
+    private ImageView imageViewPointerROLL;
+    private ImageView imageViewPointerPITCH;
+
+    Pattern pattern_string;
+    Pattern pattern_values;
 
 
-    public void buttonConnectOnClick(View view) {
-        String address = editTextBluetoothAddress.getText().toString();
-        BluetoothDevice bluetoothDevice = bluetoothAdapter.getRemoteDevice(address);
-        threadConnect = new ThreadConnect(bluetoothDevice);
-        threadConnect.start();
-    }
-
-    private class ThreadConnect extends Thread {
+    public class ThreadConnect extends Thread {
         private final BluetoothDevice bluetoothDevice;
         private BluetoothSocket bluetoothSocket;
 
@@ -88,8 +91,10 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+
     public class ThreadConnected extends Thread {
         private final InputStream connectedInputStream;
+
 
         ThreadConnected(BluetoothSocket socket) {
             InputStream in = null;
@@ -103,10 +108,27 @@ public class MainActivity extends AppCompatActivity {
 
         public void run() {
             byte[] buffer = new byte[1024];
+            ArrayList<String> arrayListString = new ArrayList<>();
             while (true) {
                 try {
-                    final String msgReceived = "Ricevuto: " + new String(buffer, 0, this.connectedInputStream.read(buffer));
-                    Log.i(TAG, msgReceived);
+                    final String msgReceived = new String(buffer, 0, this.connectedInputStream.read(buffer));
+                    Matcher matcher = pattern_string.matcher(msgReceived);
+
+                    Log.i(TAG, "Messaggio ricevuto: " + msgReceived);
+                    while (matcher.find()) {
+                        String group = matcher.group();
+                        Log.i(TAG, "Messaggio dopo il regex: " + group);
+
+                        String[] values = group.split(";");
+                        final float ROLL = Float.parseFloat(values[10]);
+                        final float PITCH = Float.parseFloat(values[11]);
+                        Log.i(TAG, "ROLL: " + ROLL + ", PITCH: " + PITCH);
+                            // pitch e roll hanno valori in gradi, che vanno da -90 a +90.
+                            // gruppi 10 e 11 per ROLL e PITCH
+                        imageViewPointerROLL.setRotation(ROLL);
+                        imageViewPointerPITCH.setRotation(PITCH);
+                    }
+
                 } catch (IOException e) {
                     Log.i(TAG, "Error");
                     break;
@@ -116,12 +138,19 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
+    private void startThreadConnected(BluetoothSocket socket) {
+        ThreadConnected threadConnected = new ThreadConnected(socket);
+        threadConnected.start();
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
         this.editTextBluetoothAddress = findViewById(R.id.editTextBluetoothAddress);
+        this.imageViewPointerPITCH = findViewById(R.id.imageViewPointerPITCH);
+        this.imageViewPointerROLL = findViewById(R.id.imageViewPointerROLL);
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
 
         if (this.bluetoothAdapter != null) {
@@ -130,6 +159,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     protected void onStart() {
+        this.pattern_string = Pattern.compile("FDL[^FDL\\s]*");
+        this.pattern_values = Pattern.compile("\\w+;([0-9\\-.];?)+");
+
         super.onStart();
         if (!this.bluetoothAdapter.isEnabled()) {
             Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
@@ -144,8 +176,10 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void startThreadConnected(BluetoothSocket socket) {
-        ThreadConnected threadConnected = new ThreadConnected(socket);
-        threadConnected.start();
+    public void buttonConnectOnClick(View view) {
+        String address = editTextBluetoothAddress.getText().toString();
+        BluetoothDevice bluetoothDevice = bluetoothAdapter.getRemoteDevice(address);
+        threadConnect = new ThreadConnect(bluetoothDevice);
+        threadConnect.start();
     }
 }
